@@ -18,7 +18,7 @@ else
     cat > .env << EOF
 LLM_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=$KEY
-LLM_MODEL=meta-llama/llama-3.2-3b-instruct:free
+LLM_MODEL=google/gemma-4-31b-it:free
 EOF
     echo ".env created."
   fi

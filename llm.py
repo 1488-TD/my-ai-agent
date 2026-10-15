@@ -35,7 +35,7 @@ def chat(messages: list, tools: list | None = None) -> dict:
     load_env()
     base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
     api_key = os.getenv("LLM_API_KEY", "")
-    model = os.getenv("LLM_MODEL", "meta-llama/llama-3.2-3b-instruct:free")
+    model = os.getenv("LLM_MODEL", "google/gemma-4-31b-it:free")
 
     payload = {"model": model, "messages": messages}
     if tools:
