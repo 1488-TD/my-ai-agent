@@ -1,2 +1,2 @@
-openai>=1.30.0
-python-dotenv>=1.0.0
+# No dependencies needed! This project uses only the Python standard library.
+# The llm.py helper talks to the model API directly with urllib.

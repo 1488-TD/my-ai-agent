@@ -1,7 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# One-shot setup for Android/Termux.
-# Prompts for your free OpenRouter API key, writes .env,
-# installs dependencies, and runs a quick test.
+# One-shot setup for Android/Termux. No pip packages needed (stdlib only).
 
 set -e
 cd "$(dirname "$0")"
@@ -26,11 +24,7 @@ EOF
   fi
 fi
 
-# 2. Dependencies
-echo "Installing Python dependencies..."
-pip install -q -r requirements.txt
-
-# 3. Test
+# 2. Test
 if [ -f .env ]; then
   echo ""
   echo "=== Testing the LLM connection ==="

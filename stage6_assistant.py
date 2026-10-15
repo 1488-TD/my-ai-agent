@@ -1,30 +1,19 @@
 """Stage 6 — Real project: Study Assistant.
 Run: python stage6_assistant.py
 An interactive study assistant with several tools:
-  get_time, calculator, add_note, list_notes, quiz_me
+  calculator, add_note, list_notes, save_quiz, quiz_me
 Short-term memory: the chat loop below.
 Long-term memory: notes + quiz terms stored in SQLite.
 Type 'quit' to exit.
 """
 
 import json
-import os
-import random
 import sqlite3
 from datetime import datetime
 
-from dotenv import load_dotenv
-from openai import OpenAI
+from llm import chat
 
-load_dotenv()
-
-client = OpenAI(
-    base_url=os.getenv("LLM_BASE_URL", "http://localhost:11434/v1"),
-    api_key=os.getenv("LLM_API_KEY", "ollama"),
-)
-MODEL = os.getenv("LLM_MODEL", "llama3.2")
-
-DB_PATH = os.path.join(os.path.dirname(__file__), "study.db")
+DB_PATH = "study.db"
 
 
 def init_db() -> sqlite3.Connection:
@@ -47,10 +36,6 @@ def init_db() -> sqlite3.Connection:
 
 
 # --- Tools ---
-def get_time() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
 def calculator(expression: str) -> str:
     allowed = set("0123456789+-*/(). ")
     if not set(expression) <= allowed:
@@ -86,14 +71,6 @@ def quiz_me(conn) -> str:
 
 
 TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_time",
-            "description": "Returns the current local date and time.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
     {
         "type": "function",
         "function": {
@@ -158,7 +135,6 @@ TOOL_SCHEMAS = [
 def make_runner(conn):
     def run_tool(name: str, args: dict) -> str:
         handlers = {
-            "get_time": lambda: get_time(),
             "calculator": lambda: calculator(args["expression"]),
             "add_note": lambda: add_note(conn, args["topic"], args["content"]),
             "list_notes": lambda: list_notes(conn),
@@ -173,19 +149,16 @@ def make_runner(conn):
 
 def agent_loop(conn, run_tool, messages) -> str:
     while True:
-        response = client.chat.completions.create(
-            model=MODEL, messages=messages, tools=TOOL_SCHEMAS
-        )
-        msg = response.choices[0].message
-        if not msg.tool_calls:
-            messages.append({"role": "assistant", "content": msg.content})
-            return msg.content
-        for call in msg.tool_calls:
-            args = json.loads(call.function.arguments or "{}")
-            result = run_tool(call.function.name, args)
-            print(f"  [tool] {call.function.name} -> {result[:80]}")
-            messages.append(msg)
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+        message = chat(messages, tools=TOOL_SCHEMAS)
+        if not message.get("tool_calls"):
+            messages.append({"role": "assistant", "content": message["content"]})
+            return message["content"]
+        for call in message["tool_calls"]:
+            args = json.loads(call["function"]["arguments"] or "{}")
+            result = run_tool(call["function"]["name"], args)
+            print(f"  [tool] {call['function']['name']} -> {result[:80]}")
+            messages.append(message)
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
 
 
 SYSTEM_PROMPT = (

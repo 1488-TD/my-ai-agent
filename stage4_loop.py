@@ -1,24 +1,13 @@
 """Stage 4 — Build the agent loop.
 Run: python stage4_loop.py
-Learn: the heart of every agent. Send prompt -> model picks tools ->
+Learn: the heart of every agent. Prompt -> model picks tools ->
 run tools -> feed results back -> repeat until a final answer.
 """
 
 import json
-import os
 from datetime import datetime
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
-load_dotenv()
-
-client = OpenAI(
-    base_url=os.getenv("LLM_BASE_URL", "http://localhost:11434/v1"),
-    api_key=os.getenv("LLM_API_KEY", "ollama"),
-)
-MODEL = os.getenv("LLM_MODEL", "llama3.2")
-
+from llm import chat
 
 # --- Tools: the functions the agent is allowed to call ---
 def get_time() -> str:
@@ -77,21 +66,18 @@ def agent_loop(user_message: str) -> str:
     ]
 
     while True:
-        response = client.chat.completions.create(
-            model=MODEL, messages=messages, tools=TOOL_SCHEMAS
-        )
-        msg = response.choices[0].message
+        message = chat(messages, tools=TOOL_SCHEMAS)
 
         # No tool calls = final answer, we are done
-        if not msg.tool_calls:
-            return msg.content
+        if not message.get("tool_calls"):
+            return message["content"]
 
         # The model wants tools: run each one, append the results
-        for call in msg.tool_calls:
-            result = run_tool(call.function.name, call.function.arguments)
-            print(f"[tool] {call.function.name}({call.function.arguments}) -> {result}")
-            messages.append(msg)  # the model's tool request
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+        for call in message["tool_calls"]:
+            result = run_tool(call["function"]["name"], call["function"]["arguments"])
+            print(f"[tool] {call['function']['name']}({call['function']['arguments']}) -> {result}")
+            messages.append(message)  # the model's tool request
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
 
 
 if __name__ == "__main__":

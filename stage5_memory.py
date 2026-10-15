@@ -4,23 +4,13 @@ Learn: short-term memory (full chat history) + long-term memory (SQLite).
 """
 
 import json
-import os
 import sqlite3
 from datetime import datetime
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
-load_dotenv()
-
-client = OpenAI(
-    base_url=os.getenv("LLM_BASE_URL", "http://localhost:11434/v1"),
-    api_key=os.getenv("LLM_API_KEY", "ollama"),
-)
-MODEL = os.getenv("LLM_MODEL", "llama3.2")
+from llm import chat
 
 # --- Long-term memory: SQLite ---
-DB_PATH = os.path.join(os.path.dirname(__file__), "memory.db")
+DB_PATH = "memory.db"
 
 
 def init_db() -> sqlite3.Connection:
@@ -49,16 +39,6 @@ def save_memory(conn: sqlite3.Connection, key: str, value: str) -> str:
 def recall(conn: sqlite3.Connection, key: str) -> str:
     row = conn.execute("SELECT value FROM memories WHERE key=?", (key,)).fetchone()
     return row[0] if row else "not found"
-
-
-def list_memory_keys(conn: sqlite3.Connection) -> str:
-    rows = conn.execute("SELECT key FROM memories ORDER BY key").fetchall()
-    return ", ".join(r[0] for r in rows) if rows else "no memories yet"
-
-
-# --- Tools exposed to the model ---
-def get_time() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 TOOL_SCHEMAS = [
@@ -97,27 +77,22 @@ def run_tool(conn: sqlite3.Connection, name: str, args: dict) -> str:
         return save_memory(conn, args["key"], args["value"])
     if name == "recall":
         return recall(conn, args["key"])
-    if name == "get_time":
-        return get_time()
     return "error: unknown tool"
 
 
 def agent_loop(conn: sqlite3.Connection, messages: list) -> str:
     """messages persists between calls = short-term memory."""
     while True:
-        response = client.chat.completions.create(
-            model=MODEL, messages=messages, tools=TOOL_SCHEMAS
-        )
-        msg = response.choices[0].message
-        if not msg.tool_calls:
-            messages.append({"role": "assistant", "content": msg.content})
-            return msg.content
-        for call in msg.tool_calls:
-            args = json.loads(call.function.arguments or "{}")
-            result = run_tool(conn, call.function.name, args)
-            print(f"[tool] {call.function.name}({args}) -> {result}")
-            messages.append(msg)
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+        message = chat(messages, tools=TOOL_SCHEMAS)
+        if not message.get("tool_calls"):
+            messages.append({"role": "assistant", "content": message["content"]})
+            return message["content"]
+        for call in message["tool_calls"]:
+            args = json.loads(call["function"]["arguments"] or "{}")
+            result = run_tool(conn, call["function"]["name"], args)
+            print(f"[tool] {call['function']['name']}({args}) -> {result}")
+            messages.append(message)
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
 
 
 if __name__ == "__main__":
@@ -126,16 +101,14 @@ if __name__ == "__main__":
         {"role": "system", "content": "You are a personal assistant with memory tools."}
     ]
 
-    # First conversation: the agent stores a fact
-    print("you: My favorite language is Python")
+    # First: the agent stores a fact
+    print("you: My favorite language is Python, remember that.")
     history.append({"role": "user", "content": "My favorite language is Python, remember that."})
     print("agent:", agent_loop(conn, history))
 
-    # Second conversation: same history, so it remembers the context;
-    # and it can use recall() for facts stored in SQLite
+    # Second: it can use recall() for facts stored in SQLite
     print("\nyou: What is my favorite language?")
     history.append({"role": "user", "content": "What is my favorite language? Check your memory."})
     print("agent:", agent_loop(conn, history))
 
     conn.close()
-    print("\nSQLite memories:", list_memory_keys(init_db()))
